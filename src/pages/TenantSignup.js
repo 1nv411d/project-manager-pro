@@ -53,8 +53,10 @@ function TenantSignup() {
       setIsSubmitting(true);
       setError('');
 
-      // Create tenant
+      // Create tenant ID consistently
       const tenantId = tenantData.domain.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+      console.log('Creating tenant with ID:', tenantId); // Debug log
+
       const tenant = new Tenant(
         tenantId,
         tenantData.companyName,
@@ -83,11 +85,14 @@ function TenantSignup() {
         status: 'active'
       };
 
-      // Save tenant and admin data
+      // Save tenant and admin data with correct key format
       tenantService.setData(`tenant_${tenantId}`, tenant);
       tenantService.setData(`users_${tenantId}`, [adminUser]);
       
-      // Initialize tenant with default data
+      console.log('Saved tenant:', tenant); // Debug log
+      console.log('Saved admin user:', adminUser); // Debug log
+
+      // Initialize tenant
       tenantService.setTenant(tenant);
       tenantService.initializeTenantData(tenant);
 
@@ -96,6 +101,7 @@ function TenantSignup() {
       
       navigate('/');
     } catch (err) {
+      console.error('Signup error:', err); // Debug log
       setError('Failed to create tenant. Please try again.');
     } finally {
       setIsSubmitting(false);

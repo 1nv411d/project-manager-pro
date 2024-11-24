@@ -60,24 +60,30 @@ function Login() {
 
     try {
       const domain = email.split('@')[1];
-      const tenantId = domain.replace(/\./g, '_');
+      const tenantId = domain.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
       
       const tenant = tenantService.getData(`tenant_${tenantId}`);
+      console.log('Looking for tenant:', tenantId, tenant);
+
       if (!tenant) {
         setError('No account found for this domain. Please sign up first.');
+        setIsLoading(false);
         return;
       }
 
       const users = tenantService.getData(`users_${tenantId}`) || [];
-      const user = users.find(u => u.email === email);
+      console.log('Found users:', users);
 
+      const user = users.find(u => u.email === email);
       if (!user) {
         setError('User not found. Please contact your administrator.');
+        setIsLoading(false);
         return;
       }
 
       if (user.password !== password) {
         setError('Invalid password.');
+        setIsLoading(false);
         return;
       }
 
@@ -86,11 +92,12 @@ function Login() {
         return;
       }
 
-      await authService.login(email, password, tenantId);
       tenantService.setTenant(tenant);
+      await authService.login(email, password, tenantId);
       
       navigate('/');
     } catch (err) {
+      console.error('Login error:', err);
       setError(err.message || 'Invalid credentials');
     } finally {
       setIsLoading(false);
