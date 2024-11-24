@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
@@ -33,8 +34,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import SearchIcon from '@mui/icons-material/Search';
 import SortIcon from '@mui/icons-material/Sort';
-import { useNavigate } from 'react-router-dom';
-import { logActivity, createActivityDescription } from '../utils/activityLogger';
+import { logActivity, formatChanges } from '../services/activityLogger';
 import { tenantService } from '../services/TenantService';
 
 function Projects() {
@@ -141,43 +141,42 @@ function Projects() {
     
     if (editMode) {
       const oldProject = projects.find(p => p.id === currentProject.id);
-      const changes = {};
-      
-      if (oldProject.status !== currentProject.status) {
-        changes.status = currentProject.status;
-      }
-      if (oldProject.priority !== currentProject.priority) {
-        changes.priority = currentProject.priority;
-      }
-      if (oldProject.dueDate !== currentProject.dueDate) {
-        changes.dueDate = currentProject.dueDate;
-      }
+      const changes = formatChanges(oldProject, currentProject);
       
       setProjects(projects.map(project => 
         project.id === currentProject.id ? currentProject : project
       ));
 
-      if (Object.keys(changes).length > 0) {
-        logActivity(createActivityDescription('project', 'update', currentProject, changes));
-      }
+      const changeDescription = Object.entries(changes)
+        .map(([key, value]) => `${key}: ${value.from} → ${value.to}`)
+        .join(', ');
+
+      logActivity(
+        `Project "${currentProject.name}" was updated`,
+        'project',
+        { changes, projectId: currentProject.id }
+      );
     } else {
       const newProject = {
         ...currentProject,
         id: Date.now(),
       };
       setProjects([...projects, newProject]);
-
-      logActivity(createActivityDescription('project', 'create', newProject));
+      logActivity(
+        `Project "${newProject.name}" was created`,
+        'project',
+        { projectId: newProject.id }
+      );
     }
     
     handleClose();
   };
 
   const handleDeleteProject = (projectId) => {
+    const projectToDelete = projects.find(p => p.id === projectId);
     if (window.confirm('Are you sure you want to delete this project?')) {
-      const projectToDelete = projects.find(p => p.id === projectId);
       setProjects(projects.filter(project => project.id !== projectId));
-      logActivity(createActivityDescription('project', 'delete', projectToDelete));
+      logActivity(`Project "${projectToDelete.name}" was deleted`);
     }
   };
 

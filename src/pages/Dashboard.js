@@ -8,76 +8,81 @@ import {
   ListItem,
   ListItemText,
   Box,
-  LinearProgress,
-  Divider,
   Chip,
   FormControl,
   Select,
   MenuItem,
-  IconButton
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import ProjectTimeline from '../components/ProjectTimeline';
 import AnnouncementBanner from '../components/AnnouncementBanner';
-import { logActivity, createActivityDescription } from '../utils/activityLogger';
-import CloseIcon from '@mui/icons-material/Close';
+import { tenantService } from '../services/TenantService';
 
 function Dashboard() {
   const navigate = useNavigate();
   const [projectStats, setProjectStats] = useState({
-    total: 0,
-    inProgress: 0,
-    completed: 0,
+    new: 0,
     planning: 0,
+    inProgress: 0,
     onHold: 0,
-    highPriority: 0
+    highPriority: 0,
+    total: 0
   });
-
-  const [taskStats, setTaskStats] = useState({
-    total: 0,
-    completed: 0,
-    overdue: 0,
-    highPriority: 0
-  });
-
-  const [recentActivities, setRecentActivities] = useState([]);
   const [upcomingDeadlines, setUpcomingDeadlines] = useState([]);
-  const [deadlineRange, setDeadlineRange] = useState('week'); // 'week', 'month', 'quarter'
-
-  const [announcement, setAnnouncement] = useState(localStorage.getItem('announcement') || '');
+  const [deadlineRange, setDeadlineRange] = useState('week');
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [announcement, setAnnouncement] = useState('');
   const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
-  const [announcementColor, setAnnouncementColor] = useState(
-    localStorage.getItem('announcementColor') || 'primary'
-  );
 
   useEffect(() => {
-    // Load all data from localStorage
-    const savedActivities = JSON.parse(localStorage.getItem('activities') || '[]');
-    const savedProjects = JSON.parse(localStorage.getItem('projects') || '[]');
-    const savedTasks = JSON.parse(localStorage.getItem('tasks') || '[]');
-    
-    // Project stats - updated to show specific statuses
+    const tenant = tenantService.getCurrentTenant();
+    if (!tenant) return;
+
+    // Debug logging
+    console.log('Current tenant:', tenant);
+
+    // Load activities with proper tenant-specific key
+    const activities = localStorage.getItem(`pmp_${tenant.id}_activities`);
+    console.log('Raw activities from storage:', activities);
+
+    const parsedActivities = activities ? JSON.parse(activities) : [];
+    console.log('Parsed activities:', parsedActivities);
+
+    // Sort activities by timestamp, most recent first
+    const sortedActivities = parsedActivities
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 5); // Show only the 5 most recent
+
+    console.log('Sorted activities to display:', sortedActivities);
+    setRecentActivities(sortedActivities);
+
+    // Load announcement
+    const savedAnnouncement = tenantService.getData(`${tenant.id}_announcement`);
+    if (savedAnnouncement) {
+      setAnnouncement(savedAnnouncement);
+    }
+
+    // Load projects
+    const projects = tenantService.getData(`${tenant.id}_projects`) || [];
+    console.log('Loaded projects:', projects);
+
+    // Load tasks
+    const tasks = tenantService.getData(`${tenant.id}_tasks`) || [];
+    console.log('Loaded tasks:', tasks);
+
+    // Calculate project stats
     const stats = {
-      new: savedProjects.filter(p => p.status === 'New').length,
-      planning: savedProjects.filter(p => p.status === 'Planning').length,
-      inProgress: savedProjects.filter(p => p.status === 'In Progress').length,
-      onHold: savedProjects.filter(p => p.status === 'On Hold').length,
-      highPriority: savedProjects.filter(p => p.priority === 'High').length,
-      total: savedProjects.length
+      new: projects.filter(p => p.status === 'New').length,
+      planning: projects.filter(p => p.status === 'Planning').length,
+      inProgress: projects.filter(p => p.status === 'In Progress').length,
+      onHold: projects.filter(p => p.status === 'On Hold').length,
+      highPriority: projects.filter(p => p.priority === 'High').length,
+      total: projects.length
     };
     setProjectStats(stats);
 
-    // Task stats
+    // Calculate upcoming deadlines
     const today = new Date();
-    const taskStats = {
-      total: savedTasks.length,
-      completed: savedTasks.filter(t => t.completed).length,
-      overdue: savedTasks.filter(t => !t.completed && new Date(t.dueDate) < today).length,
-      highPriority: savedTasks.filter(t => t.priority === 'High' && !t.completed).length
-    };
-    setTaskStats(taskStats);
-
-    // Get upcoming deadlines with timeline filter
     const rangeEnd = new Date(today);
     
     switch (deadlineRange) {
@@ -94,7 +99,7 @@ function Dashboard() {
         rangeEnd.setDate(today.getDate() + 7);
     }
 
-    const upcomingProjects = savedProjects
+    const upcomingProjects = projects
       .filter(p => {
         const dueDate = new Date(p.dueDate);
         return dueDate > today && dueDate <= rangeEnd;
@@ -106,7 +111,7 @@ function Dashboard() {
         type: 'project'
       }));
 
-    const upcomingTaskDeadlines = savedTasks
+    const upcomingTaskDeadlines = tasks
       .filter(t => {
         const dueDate = new Date(t.dueDate);
         return !t.completed && dueDate > today && dueDate <= rangeEnd;
@@ -119,93 +124,46 @@ function Dashboard() {
       }));
 
     const allDeadlines = [...upcomingProjects, ...upcomingTaskDeadlines]
-      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
-      .slice(0, 5);
+      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 
+    console.log('Upcoming deadlines:', allDeadlines);
     setUpcomingDeadlines(allDeadlines);
-
-    // Sort activities by timestamp, most recent first
-    const sortedActivities = savedActivities
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-      .slice(0, 5); // Show only the 5 most recent activities
-
-    setRecentActivities(sortedActivities);
 
   }, [deadlineRange]);
 
-  const [completionPercentage, setCompletionPercentage] = useState(0);
-
   const handleActivityClick = (activity) => {
+    console.log('Activity clicked:', activity);
     if (activity.type === 'project') {
-      navigate('/projects', { state: { highlightId: activity.itemId } });
+      navigate('/projects');
     } else {
-      navigate('/tasks', { state: { highlightId: activity.itemId } });
-    }
-  };
-
-  // Helper function to format timestamp
-  const formatTimestamp = (timestamp) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    const diffInDays = Math.floor(diffInHours / 24);
-
-    if (diffInMinutes < 60) {
-      return `${diffInMinutes} minutes ago`;
-    } else if (diffInHours < 24) {
-      return `${diffInHours} hours ago`;
-    } else if (diffInDays === 1) {
-      return 'Yesterday';
-    } else if (diffInDays < 7) {
-      return `${diffInDays} days ago`;
-    } else {
-      return date.toLocaleDateString();
+      navigate('/tasks');
     }
   };
 
   const handleSaveAnnouncement = () => {
-    const isNewAnnouncement = !localStorage.getItem('announcement');
-    
-    if (announcement.trim()) {
-      localStorage.setItem('announcement', announcement);
-      localStorage.setItem('announcementColor', announcementColor);
-      
-      // Log activity with the announcement message
-      logActivity({
-        type: 'announcement',
-        description: isNewAnnouncement 
-          ? `New announcement: "${announcement}"`
-          : `Announcement updated to: "${announcement}"`,
-        timestamp: new Date().toISOString(),
-      });
-    } else {
-      localStorage.removeItem('announcement');
-      localStorage.removeItem('announcementColor');
-    }
+    const tenant = tenantService.getCurrentTenant();
+    tenantService.setData(`${tenant.id}_announcement`, announcement);
     setIsEditingAnnouncement(false);
   };
 
   const handleCloseAnnouncement = () => {
-    // Log the removed announcement message
-    if (announcement) {
-      logActivity({
-        type: 'announcement',
-        description: `Announcement removed: "${announcement}"`,
-        timestamp: new Date().toISOString(),
-      });
-    }
-    
     setAnnouncement('');
-    localStorage.removeItem('announcement');
-    localStorage.removeItem('announcementColor');
+    const tenant = tenantService.getCurrentTenant();
+    tenantService.setData(`${tenant.id}_announcement`, '');
   };
 
-  const handleRemoveActivity = (activityId) => {
-    const savedActivities = JSON.parse(localStorage.getItem('activities') || '[]');
-    const updatedActivities = savedActivities.filter(activity => activity.id !== activityId);
-    localStorage.setItem('activities', JSON.stringify(updatedActivities));
-    setRecentActivities(updatedActivities.slice(0, 5));
+  const formatActivityDetails = (activity) => {
+    if (activity.details) {
+      if (activity.type === 'announcement') {
+        return activity.details.Message ? `Message: "${activity.details.Message}"` : '';
+      }
+      if (activity.details.changes) {
+        return Object.entries(activity.details.changes)
+          .map(([label, value]) => `${label}: ${value.from} → ${value.to}`)
+          .join('\n');
+      }
+    }
+    return '';
   };
 
   return (
@@ -217,18 +175,17 @@ function Dashboard() {
         onSave={handleSaveAnnouncement}
         onClose={handleCloseAnnouncement}
         onChange={setAnnouncement}
-        color={announcementColor}
-        onColorChange={setAnnouncementColor}
       />
-      
+
       <Typography variant="h4" gutterBottom>
         Dashboard
       </Typography>
       
       <Grid container spacing={2}>
-        {/* Project Overview Section */}
+        {/* Left Column */}
         <Grid item xs={12} md={6}>
-          <Paper style={{ padding: '1rem' }}>
+          {/* Project Overview Section */}
+          <Paper style={{ padding: '1rem', marginBottom: '1rem' }}>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
               <Typography variant="h6">Project Overview</Typography>
               <Chip 
@@ -291,52 +248,78 @@ function Dashboard() {
               </Grid>
             </Grid>
           </Paper>
+
+          {/* Upcoming Deadlines Section */}
+          <Paper style={{ padding: '1rem' }}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+              <Typography variant="h6">Upcoming Deadlines</Typography>
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <Select
+                  value={deadlineRange}
+                  onChange={(e) => setDeadlineRange(e.target.value)}
+                >
+                  <MenuItem value="week">Next 7 Days</MenuItem>
+                  <MenuItem value="month">Next 30 Days</MenuItem>
+                  <MenuItem value="quarter">Next 90 Days</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+            
+            <List>
+              {upcomingDeadlines.map((deadline) => (
+                <ListItem 
+                  key={`${deadline.type}-${deadline.id}`}
+                  button
+                  onClick={() => handleActivityClick(deadline)}
+                >
+                  <ListItemText
+                    primary={
+                      <Box display="flex" alignItems="center" gap={1}>
+                        {deadline.name}
+                        <Chip 
+                          label={deadline.type} 
+                          size="small"
+                          color={deadline.type === 'project' ? 'primary' : 'secondary'}
+                        />
+                      </Box>
+                    }
+                    secondary={`Due: ${deadline.dueDate}`}
+                  />
+                </ListItem>
+              ))}
+              {upcomingDeadlines.length === 0 && (
+                <ListItem>
+                  <ListItemText 
+                    secondary="No upcoming deadlines for this period"
+                  />
+                </ListItem>
+              )}
+            </List>
+          </Paper>
         </Grid>
 
-        {/* Recent Activities and Deadlines */}
+        {/* Right Column - Recent Activities */}
         <Grid item xs={12} md={6}>
-          <Paper style={{ padding: '1rem' }}>
+          <Paper style={{ padding: '1rem', height: '100%' }}>
             <Typography variant="h6" gutterBottom>
               Recent Activities
             </Typography>
             <List>
               {recentActivities.map((activity) => (
                 <ListItem 
-                  key={activity.id} 
-                  divider 
+                  key={activity.id}
                   button
                   onClick={() => handleActivityClick(activity)}
-                  secondaryAction={
-                    <IconButton 
-                      edge="end" 
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent triggering the ListItem click
-                        handleRemoveActivity(activity.id);
-                      }}
-                    >
-                      <CloseIcon fontSize="small" />
-                    </IconButton>
-                  }
                 >
                   <ListItemText
-                    primary={
-                      <Box>
-                        <Typography component="span">
-                          {activity.description}
-                        </Typography>
-                        {activity.changes && (
-                          <Typography 
-                            variant="body2" 
-                            color="text.secondary" 
-                            sx={{ mt: 0.5 }}
-                          >
-                            Changes: {activity.changes}
-                          </Typography>
-                        )}
+                    primary={activity.description}
+                    secondary={
+                      <Box component="span" sx={{ whiteSpace: 'pre-line' }}>
+                        {formatActivityDetails(activity)}
+                        {formatActivityDetails(activity) && <br />}
+                        {new Date(activity.timestamp).toLocaleString()}
                       </Box>
                     }
-                    secondary={formatTimestamp(activity.timestamp)}
                   />
                 </ListItem>
               ))}
@@ -348,96 +331,10 @@ function Dashboard() {
                 </ListItem>
               )}
             </List>
-            
-            <Divider style={{ margin: '1rem 0' }} />
-            
-            <Box>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="h6">
-                  Upcoming Deadlines
-                </Typography>
-                <FormControl size="small" sx={{ minWidth: 120 }}>
-                  <Select
-                    value={deadlineRange}
-                    onChange={(e) => setDeadlineRange(e.target.value)}
-                    variant="outlined"
-                    size="small"
-                  >
-                    <MenuItem value="week">Next 7 Days</MenuItem>
-                    <MenuItem value="month">Next 30 Days</MenuItem>
-                    <MenuItem value="quarter">Next 90 Days</MenuItem>
-                  </Select>
-                </FormControl>
-              </Box>
-
-              {/* Projects Section */}
-              <Typography variant="subtitle1" color="primary" gutterBottom>
-                Projects
-              </Typography>
-              <List>
-                {upcomingDeadlines.filter(d => d.type === 'project').length > 0 ? (
-                  upcomingDeadlines
-                    .filter(d => d.type === 'project')
-                    .map((deadline) => (
-                      <ListItem 
-                        key={deadline.id} 
-                        divider 
-                        button
-                        onClick={() => navigate('/projects')}
-                      >
-                        <ListItemText
-                          primary={deadline.name}
-                          secondary={`Due: ${deadline.dueDate}`}
-                        />
-                      </ListItem>
-                    ))
-                ) : (
-                  <ListItem>
-                    <ListItemText 
-                      secondary="No upcoming project deadlines"
-                    />
-                  </ListItem>
-                )}
-              </List>
-
-              {/* Tasks Section */}
-              <Box mt={2}>
-                <Typography variant="subtitle1" color="secondary" gutterBottom>
-                  Tasks
-                </Typography>
-                <List>
-                  {upcomingDeadlines.filter(d => d.type === 'task').length > 0 ? (
-                    upcomingDeadlines
-                      .filter(d => d.type === 'task')
-                      .map((deadline) => (
-                        <ListItem 
-                          key={deadline.id} 
-                          divider 
-                          button
-                          onClick={() => navigate('/tasks')}
-                        >
-                          <ListItemText
-                            primary={deadline.name}
-                            secondary={`Due: ${deadline.dueDate}`}
-                          />
-                        </ListItem>
-                      ))
-                  ) : (
-                    <ListItem>
-                      <ListItemText 
-                        secondary="No upcoming task deadlines"
-                      />
-                    </ListItem>
-                  )}
-                </List>
-              </Box>
-            </Box>
           </Paper>
         </Grid>
-      </Grid>
-      
-      {/* Timeline section */}
-      <Grid container spacing={3} sx={{ mt: 2 }}>
+
+        {/* Full Width - Project Timeline */}
         <Grid item xs={12}>
           <ProjectTimeline />
         </Grid>

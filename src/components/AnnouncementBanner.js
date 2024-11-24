@@ -5,23 +5,11 @@ import {
   Box, 
   IconButton,
   TextField,
-  Button,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel
+  Button
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import CloseIcon from '@mui/icons-material/Close';
-import AddIcon from '@mui/icons-material/Add';
-
-const BANNER_COLORS = {
-  primary: 'primary.main',
-  info: '#2196f3',
-  warning: '#ff9800',
-  error: '#f44336',
-  success: '#4caf50'
-};
+import { logActivity } from '../services/activityLogger';
 
 function AnnouncementBanner({ 
   announcement, 
@@ -29,17 +17,32 @@ function AnnouncementBanner({
   onEdit, 
   onSave, 
   onClose, 
-  onChange,
-  color,
-  onColorChange 
+  onChange 
 }) {
+  const handleSave = () => {
+    onSave();
+    logActivity(
+      `Announcement was ${announcement ? 'updated' : 'created'}`,
+      'announcement',
+      { message: announcement }
+    );
+  };
+
+  const handleClose = () => {
+    onClose();
+    logActivity(
+      'Announcement was removed',
+      'announcement',
+      { message: announcement }
+    );
+  };
+
   if (!announcement && !isEditing) {
     return (
       <Box display="flex" justifyContent="flex-end" mb={2}>
         <Button
           variant="text"
           size="small"
-          startIcon={<AddIcon />}
           onClick={onEdit}
         >
           Add Announcement
@@ -52,7 +55,7 @@ function AnnouncementBanner({
     <Paper 
       sx={{ 
         p: 2, 
-        bgcolor: BANNER_COLORS[color] || BANNER_COLORS.primary, 
+        bgcolor: 'primary.main', 
         color: 'primary.contrastText',
         position: 'relative',
         mb: 2
@@ -80,41 +83,12 @@ function AnnouncementBanner({
                   borderColor: 'white',
                 },
               },
-              '& .MuiOutlinedInput-input::placeholder': {
-                color: 'rgba(255, 255, 255, 0.7)',
-              },
             }}
           />
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel sx={{ color: 'white' }}>Color</InputLabel>
-            <Select
-              value={color}
-              label="Color"
-              onChange={(e) => onColorChange(e.target.value)}
-              sx={{
-                color: 'white',
-                '.MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(255, 255, 255, 0.5)',
-                },
-                '&:hover .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'white',
-                },
-                '.MuiSvgIcon-root': {
-                  color: 'white',
-                }
-              }}
-            >
-              <MenuItem value="primary">Default</MenuItem>
-              <MenuItem value="info">Info</MenuItem>
-              <MenuItem value="warning">Warning</MenuItem>
-              <MenuItem value="error">Important</MenuItem>
-              <MenuItem value="success">Success</MenuItem>
-            </Select>
-          </FormControl>
           <Button 
             variant="contained" 
             color="secondary"
-            onClick={onSave}
+            onClick={handleSave}
           >
             Save
           </Button>
@@ -134,7 +108,7 @@ function AnnouncementBanner({
             </IconButton>
             <IconButton 
               size="small" 
-              onClick={onClose}
+              onClick={handleClose}
               sx={{ color: 'inherit' }}
             >
               <CloseIcon />

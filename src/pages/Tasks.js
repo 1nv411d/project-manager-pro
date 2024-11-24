@@ -42,7 +42,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import LabelIcon from '@mui/icons-material/Label';
 import SortIcon from '@mui/icons-material/Sort';
 import { useNavigate } from 'react-router-dom';
-import { logActivity, createActivityDescription } from '../utils/activityLogger';
+import { logActivity, formatChanges } from '../services/activityLogger';
 import { tenantService } from '../services/TenantService';
 
 function Tasks() {
@@ -169,73 +169,57 @@ function Tasks() {
   const handleSaveTask = () => {
     if (currentTask.title.trim() === '') return;
 
-    const selectedProject = projects.find(p => p.id === currentTask.projectId);
-    const taskWithProject = {
-      ...currentTask,
-      projectName: selectedProject ? selectedProject.name : ''
-    };
-    
     if (editMode) {
-      // Find the old task to compare changes
       const oldTask = tasks.find(t => t.id === currentTask.id);
-      const changes = {};
-      
-      // Compare and record changes
-      if (oldTask.status !== currentTask.status) {
-        changes.status = currentTask.status;
-      }
-      if (oldTask.priority !== currentTask.priority) {
-        changes.priority = currentTask.priority;
-      }
-      if (oldTask.dueDate !== currentTask.dueDate) {
-        changes.dueDate = currentTask.dueDate;
-      }
-      if (oldTask.assignedTo !== currentTask.assignedTo) {
-        changes.assignedTo = currentTask.assignedTo;
-      }
+      const changes = formatChanges(oldTask, currentTask);
       
       setTasks(tasks.map(task => 
-        task.id === currentTask.id ? taskWithProject : task
+        task.id === currentTask.id ? currentTask : task
       ));
 
-      // Log update activity
-      if (Object.keys(changes).length > 0) {
-        logActivity(createActivityDescription('task', 'update', taskWithProject, changes));
-      }
+      const changeDescription = Object.entries(changes)
+        .map(([key, value]) => `${key}: ${value.from} → ${value.to}`)
+        .join(', ');
+
+      logActivity(
+        `Task "${currentTask.title}" was updated`,
+        'task',
+        { changes, taskId: currentTask.id }
+      );
     } else {
       const newTask = {
-        ...taskWithProject,
+        ...currentTask,
         id: Date.now(),
       };
       setTasks([...tasks, newTask]);
-
-      // Log creation activity
-      logActivity(createActivityDescription('task', 'create', newTask));
+      logActivity(
+        `Task "${newTask.title}" was created`,
+        'task',
+        { taskId: newTask.id }
+      );
     }
     
     handleClose();
   };
 
   const handleDeleteTask = (taskId) => {
+    const taskToDelete = tasks.find(t => t.id === taskId);
     if (window.confirm('Are you sure you want to delete this task?')) {
-      const taskToDelete = tasks.find(t => t.id === taskId);
       setTasks(tasks.filter(task => task.id !== taskId));
-      logActivity(createActivityDescription('task', 'delete', taskToDelete));
+      logActivity(`Task "${taskToDelete.title}" was deleted`);
     }
   };
 
   const handleToggleComplete = (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     const updatedTask = { ...task, completed: !task.completed };
+    setTasks(tasks.map(t => t.id === taskId ? updatedTask : t));
     
-    setTasks(tasks.map(t => 
-      t.id === taskId ? updatedTask : t
-    ));
-
-    // Log completion status change
-    logActivity(createActivityDescription('task', 'update', updatedTask, {
-      completed: updatedTask.completed ? 'Completed' : 'Reopened'
-    }));
+    logActivity(
+      `Task "${task.title}" was marked as ${updatedTask.completed ? 'completed' : 'incomplete'}`,
+      'task',
+      { taskId, completed: updatedTask.completed }
+    );
   };
 
   const getPriorityColor = (priority) => {
